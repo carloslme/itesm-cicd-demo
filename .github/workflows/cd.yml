@@ -55,7 +55,6 @@ jobs:
         if [ -f "ec2-instance-info.txt" ]; then
           INSTANCE_ID=$(grep "Instance ID:" ec2-instance-info.txt | cut -d' ' -f3 2>/dev/null || echo "")
           if [ ! -z "$INSTANCE_ID" ]; then
-            # Check if instance still exists and is running
             STATUS=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID \
               --query 'Reservations[0].Instances[0].State.Name' \
               --output text 2>/dev/null || echo "not-found")
@@ -70,56 +69,119 @@ jobs:
           echo "No existing instance info found"
         fi
     
+    - name: Get latest Amazon Linux AMI
+      id: ami
+      run: |
+        # Get the latest Amazon Linux 2023 AMI ID for current region
+        AMI_ID=$(aws ec2 describe-images \
+          --owners amazon \
+          --filters "Name=name,Values=al2023-ami-*-x86_64" \
+                   "Name=state,Values=available" \
+          --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+          --output text)
+        
+        if [ "$AMI_ID" = "None" ] || [ -z "$AMI_ID" ]; then
+          # Fallback to Amazon Linux 2
+          echo "⚠️ AL2023 not found, trying Amazon Linux 2..."
+          AMI_ID=$(aws ec2 describe-images \
+            --owners amazon \
+            --filters "Name=name,Values=amzn2-ami-hvm-*-x86_64-gp2" \
+                     "Name=state,Values=available" \
+            --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+            --output text)
+        fi
+        
+        if [ "$AMI_ID" = "None" ] || [ -z "$AMI_ID" ]; then
+          echo "❌ Could not find suitable AMI"
+          exit 1
+        fi
+        
+        echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+        echo "✅ Using AMI: $AMI_ID"
+    
     - name: Create EC2 instance if needed
       if: steps.ec2-check.outputs.instance_status != 'running'
       run: |
         echo "🚀 Creating new EC2 instance..."
+        AMI_ID="${{ steps.ami.outputs.ami_id }}"
+        
+        # Create unique names with timestamp
+        TIMESTAMP=$(date +%s)
+        KEY_NAME="ml-demo-key-$TIMESTAMP"
+        SG_NAME="ml-demo-sg-$TIMESTAMP"
         
         # Create key pair
-        KEY_NAME="ml-demo-key-$(date +%s)"
+        echo "Creating key pair: $KEY_NAME"
         aws ec2 create-key-pair --key-name $KEY_NAME \
           --query 'KeyMaterial' --output text > $KEY_NAME.pem
         chmod 400 $KEY_NAME.pem
         
         # Create security group
+        echo "Creating security group: $SG_NAME"
         SG_ID=$(aws ec2 create-security-group \
-          --group-name ml-demo-sg-$(date +%s) \
-          --description "ML Demo Security Group" \
+          --group-name $SG_NAME \
+          --description "ML Demo Security Group - $TIMESTAMP" \
           --query 'GroupId' --output text)
         
-        # Allow SSH and HTTP
+        echo "Security group created: $SG_ID"
+        
+        # Allow SSH (port 22)
+        echo "Adding SSH rule..."
         aws ec2 authorize-security-group-ingress \
           --group-id $SG_ID --protocol tcp --port 22 --cidr 0.0.0.0/0
+        
+        # Allow HTTP on port 8000
+        echo "Adding HTTP rule for port 8000..."
         aws ec2 authorize-security-group-ingress \
           --group-id $SG_ID --protocol tcp --port 8000 --cidr 0.0.0.0/0
         
+        # Create user data script
+        cat > user-data.sh << 'EOF'
+        #!/bin/bash
+        yum update -y
+        yum install -y python3 python3-pip git docker
+        systemctl start docker
+        systemctl enable docker
+        usermod -a -G docker ec2-user
+        
+        # Install Docker Compose
+        curl -L "https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+        ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+        EOF
+        
         # Launch instance
+        echo "Launching EC2 instance with AMI: $AMI_ID"
         INSTANCE_ID=$(aws ec2 run-instances \
-          --image-id ami-0c02fb55956c7d316 \
+          --image-id $AMI_ID \
           --count 1 \
           --instance-type t3.micro \
           --key-name $KEY_NAME \
           --security-group-ids $SG_ID \
-          --user-data file://scripts/user-data.sh \
+          --user-data file://user-data.sh \
+          --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=ML-Demo-Instance},{Key=Project,Value=ITESM-CICD-Demo}]' \
           --query 'Instances[0].InstanceId' \
-          --output text 2>/dev/null || \
-          aws ec2 run-instances \
-            --image-id ami-0c02fb55956c7d316 \
-            --count 1 \
-            --instance-type t3.micro \
-            --key-name $KEY_NAME \
-            --security-group-ids $SG_ID \
-            --query 'Instances[0].InstanceId' \
-            --output text)
+          --output text)
         
-        echo "Instance created: $INSTANCE_ID"
+        if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+          echo "❌ Failed to create instance"
+          exit 1
+        fi
+        
+        echo "✅ Instance created: $INSTANCE_ID"
         
         # Wait for instance to be running
+        echo "⏳ Waiting for instance to be running..."
         aws ec2 wait instance-running --instance-ids $INSTANCE_ID
         
         # Get public IP
         PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID \
           --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+        
+        if [ -z "$PUBLIC_IP" ] || [ "$PUBLIC_IP" = "None" ]; then
+          echo "❌ Could not get public IP"
+          exit 1
+        fi
         
         # Save instance info
         cat > ec2-instance-info.txt << EOF
@@ -127,13 +189,17 @@ jobs:
         Public IP: $PUBLIC_IP
         Key Name: $KEY_NAME
         Security Group: $SG_ID
+        AMI ID: $AMI_ID
+        Created: $(date)
         EOF
         
         echo "✅ EC2 instance created successfully!"
         echo "Instance ID: $INSTANCE_ID"
         echo "Public IP: $PUBLIC_IP"
+        echo "AMI ID: $AMI_ID"
         
         # Wait for instance to be fully ready
+        echo "⏳ Waiting for instance initialization (2 minutes)..."
         sleep 120
     
     - name: Deploy application to EC2
@@ -144,91 +210,122 @@ jobs:
         PUBLIC_IP=$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3)
         KEY_NAME=$(grep "Key Name:" ec2-instance-info.txt | cut -d' ' -f3)
         
-        echo "Deploying $MODEL_VERSION to $PUBLIC_IP"
+        echo "🚀 Deploying $MODEL_VERSION to $PUBLIC_IP"
+        
+        # Wait for SSH to be available
+        echo "⏳ Waiting for SSH to be available..."
+        for i in {1..30}; do
+          if ssh -i $KEY_NAME.pem -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+             ec2-user@$PUBLIC_IP "echo 'SSH Ready'" 2>/dev/null; then
+            echo "✅ SSH connection established!"
+            break
+          fi
+          echo "Waiting for SSH... ($i/30)"
+          sleep 10
+        done
         
         # Create deployment script
-        cat > deploy-script.sh << 'EOF'
+        cat > deploy-app.sh << 'EOF'
         #!/bin/bash
         set -e
         
-        # Update system
-        sudo yum update -y
+        echo "🔧 Setting up application..."
         
-        # Install Docker
-        sudo yum install -y docker
-        sudo systemctl start docker
-        sudo systemctl enable docker
-        sudo usermod -a -G docker ec2-user
-        
-        # Install Docker Compose
-        sudo curl -L "https://github.com/docker/compose/releases/download/v2.21.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
-        
-        # Install Python and dependencies
-        sudo yum install -y python3 python3-pip git
-        
-        # Clone or update repository
+        # Clone repository
         if [ -d "itesm-cicd-demo" ]; then
+            echo "Updating existing repository..."
             cd itesm-cicd-demo
-            git pull
+            git pull origin main
         else
-            git clone https://github.com/$GITHUB_REPOSITORY.git itesm-cicd-demo
+            echo "Cloning repository..."
+            git clone https://github.com/GITHUB_REPO.git itesm-cicd-demo
             cd itesm-cicd-demo
         fi
         
         # Install Python dependencies
-        pip3 install -r requirements.txt
+        echo "Installing Python dependencies..."
+        pip3 install --user -r requirements.txt
         
-        # Train model
+        # Create models directory
         mkdir -p src/api/models
-        if [ "$MODEL_VERSION" = "v1" ]; then
+        
+        # Train the model
+        echo "Training MODEL_VERSION model..."
+        export PYTHONPATH=/home/ec2-user/itesm-cicd-demo
+        if [ "MODEL_VERSION" = "v1" ]; then
             python3 src/training/train.py 1
         else
             python3 src/training/train.py 2
         fi
         
-        # Start API
-        nohup python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
+        # Kill any existing API process
+        pkill -f "uvicorn src.api.main:app" || true
+        sleep 5
         
-        echo "Deployment completed!"
+        # Start the API
+        echo "Starting API server..."
+        export MODEL_VERSION=MODEL_VERSION
+        export PYTHONPATH=/home/ec2-user/itesm-cicd-demo
+        nohup python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 > /home/ec2-user/api.log 2>&1 &
+        
+        echo "✅ Deployment completed!"
+        echo "API log location: /home/ec2-user/api.log"
         EOF
         
-        # Copy script to EC2 and execute
-        scp -i $KEY_NAME.pem -o StrictHostKeyChecking=no \
-          deploy-script.sh ec2-user@$PUBLIC_IP:/tmp/
+        # Replace placeholders
+        sed -i "s/GITHUB_REPO/${{ github.repository }}/g" deploy-app.sh
+        sed -i "s/MODEL_VERSION/$MODEL_VERSION/g" deploy-app.sh
         
+        # Copy and execute deployment script
+        echo "📤 Copying deployment script..."
+        scp -i $KEY_NAME.pem -o StrictHostKeyChecking=no \
+          deploy-app.sh ec2-user@$PUBLIC_IP:/tmp/
+        
+        echo "🚀 Executing deployment..."
         ssh -i $KEY_NAME.pem -o StrictHostKeyChecking=no \
           ec2-user@$PUBLIC_IP \
-          "chmod +x /tmp/deploy-script.sh && \
-           MODEL_VERSION=$MODEL_VERSION GITHUB_REPOSITORY=${{ github.repository }} \
-           /tmp/deploy-script.sh"
+          "chmod +x /tmp/deploy-app.sh && /tmp/deploy-app.sh"
     
     - name: Test deployment
       run: |
         PUBLIC_IP=$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3)
-        echo "Testing deployment at $PUBLIC_IP:8000"
+        MODEL_VERSION="${{ steps.version.outputs.model_version }}"
+        
+        echo "🧪 Testing deployment at $PUBLIC_IP:8000"
         
         # Wait for API to be ready
-        for i in {1..30}; do
+        echo "⏳ Waiting for API to be ready..."
+        for i in {1..60}; do
           if curl -f -s "http://$PUBLIC_IP:8000/health" > /dev/null; then
             echo "✅ API is ready!"
             break
           fi
-          echo "Waiting for API... ($i/30)"
-          sleep 10
+          echo "Waiting for API... ($i/60)"
+          sleep 5
         done
         
         # Test endpoints
-        echo "Testing health endpoint..."
-        curl -f "http://$PUBLIC_IP:8000/health"
+        echo "🔍 Testing health endpoint..."
+        HEALTH_RESPONSE=$(curl -f "http://$PUBLIC_IP:8000/health")
+        echo "Health response: $HEALTH_RESPONSE"
         
-        echo "Testing model-info endpoint..."
-        curl -f "http://$PUBLIC_IP:8000/model-info"
+        echo "🔍 Testing model-info endpoint..."
+        MODEL_INFO=$(curl -f "http://$PUBLIC_IP:8000/model-info")
+        echo "Model info: $MODEL_INFO"
         
-        echo "Testing prediction endpoint..."
-        curl -f "http://$PUBLIC_IP:8000/predict?sepal_length=5.1&sepal_width=3.5&petal_length=1.4&petal_width=0.2"
+        # Verify model version
+        DEPLOYED_VERSION=$(echo "$MODEL_INFO" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+        if [ "$DEPLOYED_VERSION" = "$MODEL_VERSION" ]; then
+          echo "✅ Model version verified: $DEPLOYED_VERSION"
+        else
+          echo "⚠️ Model version mismatch: expected $MODEL_VERSION, got $DEPLOYED_VERSION"
+        fi
         
-        echo "✅ Deployment test completed successfully!"
+        echo "🔍 Testing prediction endpoint..."
+        PREDICTION=$(curl -f "http://$PUBLIC_IP:8000/predict?sepal_length=5.1&sepal_width=3.5&petal_length=1.4&petal_width=0.2")
+        echo "Prediction response: $PREDICTION"
+        
+        echo "✅ All deployment tests passed!"
     
     - name: Create deployment comment
       uses: actions/github-script@v7
@@ -238,24 +335,44 @@ jobs:
           const fs = require('fs');
           
           let publicIp = 'unknown';
+          let instanceId = 'unknown';
+          let amiId = 'unknown';
+          
           try {
             const info = fs.readFileSync('ec2-instance-info.txt', 'utf8');
-            const match = info.match(/Public IP:\s*(\S+)/);
-            publicIp = match ? match[1] : 'unknown';
+            const ipMatch = info.match(/Public IP:\s*(\S+)/);
+            const idMatch = info.match(/Instance ID:\s*(\S+)/);
+            const amiMatch = info.match(/AMI ID:\s*(\S+)/);
+            
+            publicIp = ipMatch ? ipMatch[1] : 'unknown';
+            instanceId = idMatch ? idMatch[1] : 'unknown';
+            amiId = amiMatch ? amiMatch[1] : 'unknown';
           } catch (e) {
             console.log('Could not read EC2 info:', e.message);
           }
           
           const body = `🚀 **Deployed ${version} to EC2**
 
-          ✅ **Status**: Successfully deployed
+          ✅ **Status**: Successfully deployed and tested
           🌐 **Live API**: http://${publicIp}:8000
           📊 **Model Info**: http://${publicIp}:8000/model-info
           📚 **API Docs**: http://${publicIp}:8000/docs
 
-          🧪 **Quick Test**:
+          ### 🔧 Instance Details
+          - **Instance ID**: ${instanceId}
+          - **Public IP**: ${publicIp}
+          - **AMI ID**: ${amiId}
+          - **Model Version**: ${version}
+
+          ### 🧪 Quick Test Commands
           \`\`\`bash
+          # Check health
+          curl "http://${publicIp}:8000/health"
+          
+          # Get model info
           curl "http://${publicIp}:8000/model-info"
+          
+          # Make prediction
           curl "http://${publicIp}:8000/predict?sepal_length=5.1&sepal_width=3.5&petal_length=1.4&petal_width=0.2"
           \`\`\``;
           
