@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  training:
+    build:
+      context: .
+      dockerfile: docker/training.Dockerfile
+    volumes:
+      - ./src/api/models:/app/src/api/models
+      - ./model_registry.json:/app/model_registry.json
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_VERSION=v1
+    command: ["python", "pipelines/iris_pipeline.py"]
+    networks:
+      - ml-network
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/api/models:/app/src/api/models
+      - ./model_registry.json:/app/model_registry.json
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_VERSION=v1
+      - PORT=8000
+    depends_on:
+      - training
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ml-network
+
+networks:
+  ml-network:
+    driver: bridge
+
+volumes:
+  model-data:
+    driver: local

@@ -1,0 +1,199 @@
+<mxfile host="65bd71144e">
+    <diagram id="yKb_DRSEeMWjmALHxB_K" name="ML CI/CD Architecture">
+        <mxGraphModel dx="972" dy="858" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="2" value="Developer&lt;br&gt;(Code + Model&amp;nbsp;&lt;div&gt;changes)&lt;/div&gt;" style="shape=mxgraph.office.people.business_person;verticalAlign=middle;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="10" y="120" width="120" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="GitHub Repository&#xa;(Code, Dockerfiles, &#xa;model_registry.json, &#xa;workflows)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="220" y="135" width="180" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="git push / PR" edge="1" parent="1" source="2" target="3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="Pull Request&#xa;Code Review" style="shape=process;whiteSpace=wrap;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="480" y="150" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="6" value="PR Created" edge="1" parent="1" source="3" target="5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="GitHub Actions CI" style="swimlane;childLayout=stackLayout;horizontal=1;startSize=30;rounded=1;fillColor=#f5f5f5;strokeColor=#666;" vertex="1" parent="1">
+                    <mxGeometry x="740" y="120" width="900" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" value="Lint &amp; Unit Tests" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="Train / Retrain Model&#xa;save artifact" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry x="150" y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" value="Evaluate Metrics&#xa;Compare vs Registry" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry x="300" y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="Update model_registry.json&#xa;(if improved)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry x="450" y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="12" value="Build &amp; Tag Docker Image&#xa;(api:commit / model version)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry x="600" y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="Push Image to Container Registry&#xa;(GHCR / Docker Hub)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="7">
+                    <mxGeometry x="750" y="30" width="150" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="14" value="On PR / push" edge="1" parent="1" source="5" target="7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="15" value="Manual Approval Gate&#xa;(Environment Protection)" style="shape=hexagon;whiteSpace=wrap;rounded=0;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+                    <mxGeometry x="1100" y="300" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="16" value="Needs Approval" edge="1" parent="1" source="7" target="15">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" value="Deployment Job&#xa;(Heroku / Render / Railway / Fly.io)" style="shape=process;whiteSpace=wrap;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="1080" y="490" width="220" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="18" value="On Approve" edge="1" parent="1" source="15" target="17">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" value="Production Environment" style="swimlane;horizontal=0;rounded=1;fillColor=#f8f8f8;strokeColor=#999;" vertex="1" parent="1">
+                    <mxGeometry x="1410" y="360" width="290" height="360" as="geometry"/>
+                </mxCell>
+                <mxCell id="20" value="API Container (FastAPI)&#xa;Loads Model on Startup" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#cce5ff;strokeColor=#4d89c4;" vertex="1" parent="19">
+                    <mxGeometry x="40" y="140" width="220" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="22" value="model_registry.json&#xa;(Active version + metrics)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="19">
+                    <mxGeometry x="40" y="250" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="21" value="Model Artifact (.pkl)&#xa;Versioned" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#f4cccc;strokeColor=#b85450;" vertex="1" parent="19">
+                    <mxGeometry x="40" y="30" width="220" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="Load" edge="1" parent="19" source="20" target="21">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" value="Clients&#xa;curl / REST calls" style="shape=ellipse;whiteSpace=wrap;fillColor=#e2f0d9;strokeColor=#6aa84f;" vertex="1" parent="1">
+                    <mxGeometry x="1790" y="480" width="140" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="24" value="Deploy container" edge="1" parent="1" source="17" target="20">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="26" value="Check version" edge="1" parent="1" source="20" target="22">
+                    <mxGeometry x="-0.3333" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="27" value="HTTPS /predict" edge="1" parent="1" source="23" target="20">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" value="Iris Dataset&#xa;(Raw CSV)" style="shape=folder;whiteSpace=wrap;rounded=1;fillColor=#d9ead3;strokeColor=#6aa84f;" vertex="1" parent="1">
+                    <mxGeometry x="890" y="270" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="29" value="Read" edge="1" parent="1" source="28" target="9">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="30" value="Scheduled Workflow&#xa;(Nightly / Weekly)" style="shape=trapezoid;whiteSpace=wrap;rounded=0;fillColor=#ddebf7;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="1170" y="10" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="31" value="cron" edge="1" parent="1" source="30" target="7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="32" value="Better metric?" style="shape=rhombus;whiteSpace=wrap;fillColor=#fce5cd;strokeColor=#e69138;" vertex="1" parent="1">
+                    <mxGeometry x="970" y="20" width="120" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="33" value="metrics.json" edge="1" parent="1" source="10" target="32">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="34" value="Yes" edge="1" parent="1" source="32" target="11">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="35" value="If No: Skip registry update, still build image (optionally reuse old)" style="shape=note;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="780" y="30" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="36" value="No" edge="1" parent="1" source="32" target="35">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="-gmrdDveBemeV_mQRBOp" name="Page-2">
+        <mxGraphModel dx="1033" dy="911" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-1" value="Developer" style="shape=mxgraph.office.people.business_person;verticalAlign=middle;html=1;fontStyle=1" vertex="1" parent="1">
+                    <mxGeometry x="150" y="200" width="120" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-2" value="GitHub Repository&#xa;(Source + Model Code)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+                    <mxGeometry x="310" y="200" width="160" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-3" value="GitHub Actions Pipeline" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+                    <mxGeometry x="500" y="200" width="140" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-4" value="Container Registry&#xa;(GHCR / Docker Hub)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+                    <mxGeometry x="680" y="130" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-5" value="Hosting Platform&#xa;(Heroku / Render / Railway / Fly.io)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+                    <mxGeometry x="680" y="270" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-6" value="ML Application (Monolith)" style="swimlane;horizontal=0;rounded=1;fillColor=#f8f8f8;strokeColor=#999;" vertex="1" parent="1">
+                    <mxGeometry x="840" y="105" width="230" height="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-7" value="FastAPI REST Interface" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#cce5ff;strokeColor=#4d89c4;" vertex="1" parent="g4wwAh70wqj9MRkno5yd-6">
+                    <mxGeometry x="40" y="40" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-8" value="Model Loader &amp; Prediction Logic" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#e2f0d9;strokeColor=#6aa84f;" vertex="1" parent="g4wwAh70wqj9MRkno5yd-6">
+                    <mxGeometry x="40" y="130" width="140" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-9" value="Model Artifact (.pkl)" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#f4cccc;strokeColor=#b85450;" vertex="1" parent="g4wwAh70wqj9MRkno5yd-6">
+                    <mxGeometry x="80" y="200" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-10" value="model_registry.json" style="shape=rectangle;whiteSpace=wrap;rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="g4wwAh70wqj9MRkno5yd-6">
+                    <mxGeometry x="30" y="260" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-11" value="Iris Dataset (CSV)" style="shape=folder;whiteSpace=wrap;rounded=1;fillColor=#d9ead3;strokeColor=#6aa84f;" vertex="1" parent="1">
+                    <mxGeometry x="485" y="320" width="170" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-12" value="Clients" style="shape=ellipse;whiteSpace=wrap;fillColor=#e2f0d9;strokeColor=#6aa84f;" vertex="1" parent="1">
+                    <mxGeometry x="1090" y="140" width="80" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-13" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-1" target="g4wwAh70wqj9MRkno5yd-2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-14" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-2" target="g4wwAh70wqj9MRkno5yd-3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-15" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-3" target="g4wwAh70wqj9MRkno5yd-4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-16" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-3" target="g4wwAh70wqj9MRkno5yd-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-17" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-4" target="g4wwAh70wqj9MRkno5yd-5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-18" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-5" target="g4wwAh70wqj9MRkno5yd-6">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-19" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-12" target="g4wwAh70wqj9MRkno5yd-7">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-20" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-11" target="g4wwAh70wqj9MRkno5yd-3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-21" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-7" target="g4wwAh70wqj9MRkno5yd-8">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-22" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-8" target="g4wwAh70wqj9MRkno5yd-9">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="g4wwAh70wqj9MRkno5yd-23" style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="g4wwAh70wqj9MRkno5yd-8" target="g4wwAh70wqj9MRkno5yd-10">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="900" y="310"/>
+                            <mxPoint x="900" y="310"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

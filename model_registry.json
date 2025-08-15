@@ -1,0 +1,8 @@
+{
+  "active_model": "iris_v1.pkl",
+  "metrics": {
+    "accuracy": 0.3
+  },
+  "version": "v1",
+  "model_type": "DummyClassifier"
+}
