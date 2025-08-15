@@ -1,0 +1,89 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'docker-compose.yml', 'src/**' ]
+  workflow_dispatch:
+    inputs:
+      model_version:
+        description: 'Model version (v1 or v2)'
+        required: true
+        default: 'v2'
+        type: choice
+        options: ['v1', 'v2']
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Get model version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "model_version=${{ github.event.inputs.model_version }}" >> $GITHUB_OUTPUT
+        else
+          # Extract from docker-compose.yml
+          VERSION=$(grep -E "MODEL_VERSION.*:-.*" docker-compose.yml | sed -n 's/.*MODEL_VERSION.*:-\([^}]*\).*/\1/p' | tr -d ' ')
+          echo "model_version=$VERSION" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Create EC2 if needed
+      run: |
+        if [ ! -f "ec2-instance-info.txt" ]; then
+          make create-ec2
+          sleep 60
+        fi
+    
+    - name: Deploy model
+      run: |
+        VERSION="${{ steps.version.outputs.model_version }}"
+        if [ "$VERSION" = "v1" ]; then
+          make deploy-v1-to-ec2
+        else
+          make deploy-v2-to-ec2
+        fi
+    
+    - name: Test deployment
+      run: |
+        make test-ec2
+        
+        # Get public IP and test
+        PUBLIC_IP=$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3)
+        echo "🌐 Deployed at: http://$PUBLIC_IP:8000"
+        
+        # Quick verification
+        curl -f "http://$PUBLIC_IP:8000/model-info"
+    
+    - name: Create deployment comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const version = '${{ steps.version.outputs.model_version }}';
+          const fs = require('fs');
+          
+          let publicIp = 'unknown';
+          try {
+            const info = fs.readFileSync('ec2-instance-info.txt', 'utf8');
+            publicIp = info.match(/Public IP:\s*(\S+)/)?.[1] || 'unknown';
+          } catch (e) {}
+          
+          github.rest.repos.createCommitComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.sha,
+            body: `🚀 **Deployed ${version} to EC2**\n\n✅ Live at: http://${publicIp}:8000\n🧪 Test: \`curl "http://${publicIp}:8000/model-info"\``
+          });
