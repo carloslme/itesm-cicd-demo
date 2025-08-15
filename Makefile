@@ -131,6 +131,39 @@ clean-all:
 	make clean-models
 	docker system prune -f
 
+# AWS EC2 targets
+create-ec2:
+	bash scripts/create_ec2_instance.sh
+
+deploy-to-ec2:
+	bash scripts/deploy_to_ec2.sh
+
+test-ec2:
+	@PUBLIC_IP=$$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3); \
+	echo "Testing API at: $$PUBLIC_IP:8000"; \
+	curl -f "http://$$PUBLIC_IP:8000/health" && echo "✅ Health OK"; \
+	curl -s "http://$$PUBLIC_IP:8000/predict/v1?sepal_length=5.1&sepal_width=3.5&petal_length=1.4&petal_width=0.2"
+
+connect-ec2:
+	@PUBLIC_IP=$$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3); \
+	KEY_FILE=$$(grep "Key File:" ec2-instance-info.txt | cut -d' ' -f3); \
+	echo "Connecting to: $$PUBLIC_IP"; \
+	ssh -i $$KEY_FILE ec2-user@$$PUBLIC_IP
+
+destroy-ec2:
+	@INSTANCE_ID=$$(grep "Instance ID:" ec2-instance-info.txt | cut -d' ' -f3); \
+	echo "Terminating instance: $$INSTANCE_ID"; \
+	aws ec2 terminate-instances --instance-ids $$INSTANCE_ID
+
+# Complete EC2 workflow
+ec2-full:
+	@echo "🚀 Complete EC2 deployment workflow"
+	make create-ec2
+	sleep 60
+	make deploy-to-ec2
+	make test-ec2
+	@echo "✅ EC2 deployment completed!"
+
 # Help target
 help:
 	@echo "Available targets:"
