@@ -4,29 +4,29 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    curl \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
-COPY src/training ./src/training
-COPY src/api/models ./src/api/models
+COPY src/ ./src/
 
-# Create necessary directories
-RUN mkdir -p /app/src/api/models
-RUN mkdir -p /app/src/training/data
-
-# Copy training data
-COPY src/training/data/iris.csv /app/src/training/data/
+# Create models directory
+RUN mkdir -p src/api/models
 
 # Set environment variables
 ENV PYTHONPATH=/app
+ENV MODEL_VERSION=${MODEL_VERSION:-v1}
 
-# Set working directory for training
-WORKDIR /app/src/training
+# Expose port
+EXPOSE 8000
 
-# Default command
-CMD ["python", "pipelines/iris_pipeline.py"]
+# Copy startup script
+COPY docker/start.sh .
+RUN chmod +x start.sh
+
+# Run the startup script
+CMD ["./start.sh"]

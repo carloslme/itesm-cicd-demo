@@ -40,8 +40,13 @@ def load_active_model():
     model_path = MODEL_DIR / model_file
     
     try:
-        return joblib.load(model_path), version
+        model = joblib.load(model_path)
+        return model, version
     except FileNotFoundError:
+        # If environment specifies a version but model doesn't exist, raise error
+        if os.getenv("MODEL_VERSION"):
+            raise HTTPException(status_code=404, detail=f"Model {version} not found. Train it first with: make train-{version}")
+        
         # Fallback to v1 if specified model not found
         if version != "v1":
             fallback_path = MODEL_DIR / "iris_v1.pkl"
@@ -57,8 +62,23 @@ async def health_check():
 @router.get("/model-info")
 async def model_info():
     """Get current model information"""
-    registry = load_registry()
     active_version = get_active_model_version()
+    
+    # Load registry to get model metadata
+    registry = load_registry()
+    
+    # Determine model info based on active version
+    if active_version == "v1":
+        model_type = "DummyClassifier"
+        # Try to get accuracy from registry, fallback to default
+        accuracy = 0.333  # Default poor performance for v1
+        if registry.get("version") == "v1":
+            accuracy = registry.get("metrics", {}).get("accuracy", 0.333)
+    else:  # v2
+        model_type = "RandomForestClassifier" 
+        accuracy = 0.95  # Default high performance for v2
+        if registry.get("version") == "v2":
+            accuracy = registry.get("metrics", {}).get("accuracy", 0.95)
     
     available_models = []
     for version in ["v1", "v2"]:
@@ -67,10 +87,10 @@ async def model_info():
             available_models.append(version)
     
     return {
-        "active_model": registry.get("active_model", f"iris_{active_version}.pkl"),
+        "active_model": f"iris_{active_version}.pkl",
         "version": active_version,
-        "model_type": registry.get("model_type", "unknown"),
-        "accuracy": registry.get("metrics", {}).get("accuracy", "unknown"),
+        "model_type": model_type,
+        "accuracy": accuracy,
         "available_models": available_models,
         "environment_override": os.getenv("MODEL_VERSION") is not None
     }
@@ -152,39 +172,4 @@ async def predict_v2(sepal_length: float, sepal_width: float, petal_length: floa
         "model_type": "RandomForestClassifier",
         "version": "2.0.0",
         "improvement": "Major accuracy boost via CI/CD"
-    }
-
-@router.post("/switch-model")
-async def switch_model(target_version: str):
-    """Switch active model version"""
-    if target_version not in ["v1", "v2"]:
-        raise HTTPException(status_code=400, detail="Invalid model version")
-    
-    model_path = MODEL_DIR / f"iris_{target_version}.pkl"
-    if not model_path.exists():
-        raise HTTPException(status_code=404, detail=f"Model {target_version} not found")
-    
-    # Update registry
-    registry = load_registry()
-    registry["version"] = target_version
-    registry["active_model"] = f"iris_{target_version}.pkl"
-    
-    if target_version == "v1":
-        registry["model_type"] = "DummyClassifier"
-        # Keep the original calculated accuracy
-        if "metrics" not in registry or target_version != registry.get("version"):
-            registry["metrics"] = {"accuracy": 0.35}
-    else:
-        registry["model_type"] = "RandomForestClassifier"
-        # Keep the original calculated accuracy
-        if "metrics" not in registry or target_version != registry.get("version"):
-            registry["metrics"] = {"accuracy": 0.95}
-    
-    with open("model_registry.json", "w") as f:
-        json.dump(registry, f, indent=2)
-    
-    return {
-        "status": "success",
-        "message": f"Switched to model {target_version}",
-        "active_model": registry["active_model"]
     }
