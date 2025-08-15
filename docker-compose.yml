@@ -1,5 +1,8 @@
 version: '3.8'
 
+# Supported values: v1, v2
+# When you change MODEL_VERSION and push to main branch,
+# it will automatically deploy to EC2
 services:
   ml-api:
     build:
@@ -8,5 +11,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MODEL_VERSION=${MODEL_VERSION:-v1}
+      - MODEL_VERSION=${MODEL_VERSION:-v1}  # CHANGE THIS: v1 or v2
       - PYTHONPATH=/app
+    labels:
+      - "ml.version=${MODEL_VERSION:-v1}"     # For tracking
+      - "ml.auto-deploy=true"                 # Enable auto-deploy
