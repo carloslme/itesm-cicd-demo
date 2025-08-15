@@ -205,12 +205,14 @@ jobs:
     - name: Deploy application to EC2
       run: |
         MODEL_VERSION="${{ steps.version.outputs.model_version }}"
+        GITHUB_REPO="${{ github.repository }}"
         
         # Get instance details
         PUBLIC_IP=$(grep "Public IP:" ec2-instance-info.txt | cut -d' ' -f3)
         KEY_NAME=$(grep "Key Name:" ec2-instance-info.txt | cut -d' ' -f3)
         
         echo "🚀 Deploying $MODEL_VERSION to $PUBLIC_IP"
+        echo "📦 Repository: $GITHUB_REPO"
         
         # Wait for SSH to be available
         echo "⏳ Waiting for SSH to be available..."
@@ -224,8 +226,8 @@ jobs:
           sleep 10
         done
         
-        # Create deployment script
-        cat > deploy-app.sh << 'EOF'
+        # Create deployment script with variables already substituted
+        cat > deploy-app.sh << EOF
         #!/bin/bash
         set -e
         
@@ -238,7 +240,7 @@ jobs:
             git pull origin main
         else
             echo "Cloning repository..."
-            git clone https://github.com/GITHUB_REPO.git itesm-cicd-demo
+            git clone https://github.com/${GITHUB_REPO}.git itesm-cicd-demo
             cd itesm-cicd-demo
         fi
         
@@ -250,9 +252,9 @@ jobs:
         mkdir -p src/api/models
         
         # Train the model
-        echo "Training MODEL_VERSION model..."
+        echo "Training ${MODEL_VERSION} model..."
         export PYTHONPATH=/home/ec2-user/itesm-cicd-demo
-        if [ "MODEL_VERSION" = "v1" ]; then
+        if [ "${MODEL_VERSION}" = "v1" ]; then
             python3 src/training/train.py 1
         else
             python3 src/training/train.py 2
@@ -264,17 +266,13 @@ jobs:
         
         # Start the API
         echo "Starting API server..."
-        export MODEL_VERSION=MODEL_VERSION
+        export MODEL_VERSION=${MODEL_VERSION}
         export PYTHONPATH=/home/ec2-user/itesm-cicd-demo
         nohup python3 -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 > /home/ec2-user/api.log 2>&1 &
         
         echo "✅ Deployment completed!"
         echo "API log location: /home/ec2-user/api.log"
         EOF
-        
-        # Replace placeholders
-        sed -i "s/GITHUB_REPO/${{ github.repository }}/g" deploy-app.sh
-        sed -i "s/MODEL_VERSION/$MODEL_VERSION/g" deploy-app.sh
         
         # Copy and execute deployment script
         echo "📤 Copying deployment script..."
