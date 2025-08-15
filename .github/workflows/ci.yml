@@ -19,29 +19,97 @@ jobs:
       with:
         python-version: '3.9'
     
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
+        mkdir -p src/api/models
     
     - name: Test v1 model
       run: |
+        echo "🚀 Testing v1 model training..."
         python src/training/train.py 1
         test -f src/api/models/iris_v1.pkl
+        echo "✅ v1 model trained successfully"
     
     - name: Test v2 model
       run: |
+        echo "🚀 Testing v2 model training..."
         python src/training/train.py 2
         test -f src/api/models/iris_v2.pkl
+        echo "✅ v2 model trained successfully"
     
-    - name: Test Docker build
+    - name: Test Docker builds
       run: |
-        MODEL_VERSION=v1 docker-compose build
-        MODEL_VERSION=v2 docker-compose build
+        echo "🐳 Testing Docker builds..."
+        
+        # Build v1 image
+        echo "Building v1 image..."
+        docker build -f docker/api.Dockerfile -t ml-api:v1 \
+          --build-arg MODEL_VERSION=v1 .
+        
+        # Build v2 image
+        echo "Building v2 image..."
+        docker build -f docker/api.Dockerfile -t ml-api:v2 \
+          --build-arg MODEL_VERSION=v2 .
+        
+        echo "✅ Docker builds completed successfully"
     
     - name: Quick API test
       run: |
-        MODEL_VERSION=v2 docker-compose up -d
-        sleep 20
+        echo "🧪 Testing API with v2 model..."
+        
+        # Start v2 container
+        docker run -d --name test-api -p 8000:8000 \
+          -e MODEL_VERSION=v2 ml-api:v2
+        
+        # Wait for service to start
+        echo "Waiting for API to start..."
+        for i in {1..30}; do
+          if curl -f -s http://localhost:8000/health > /dev/null; then
+            echo "✅ API is ready!"
+            break
+          fi
+          echo "Waiting... ($i/30)"
+          sleep 2
+        done
+        
+        # Test endpoints
+        echo "Testing health endpoint..."
         curl -f http://localhost:8000/health
+        
+        echo "Testing model-info endpoint..."
         curl -f http://localhost:8000/model-info
-        docker-compose down
+        
+        echo "Testing prediction endpoint..."
+        curl -f "http://localhost:8000/predict?sepal_length=5.1&sepal_width=3.5&petal_length=1.4&petal_width=0.2"
+        
+        echo "✅ API tests completed successfully"
+        
+        # Cleanup
+        docker stop test-api
+        docker rm test-api
+    
+    - name: Verify model artifacts
+      run: |
+        echo "🔍 Verifying model artifacts..."
+        ls -la src/api/models/
+        
+        # Check both models exist
+        test -f src/api/models/iris_v1.pkl
+        test -f src/api/models/iris_v2.pkl
+        test -f model_registry.json
+        
+        echo "✅ All model artifacts verified"
+    
+    - name: CI Summary
+      run: |
+        echo "## 🎯 CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Model Training**: v1 and v2 models trained successfully" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Docker Builds**: Both v1 and v2 images built successfully" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **API Tests**: Health, model-info, and prediction endpoints working" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Artifacts**: All model files created and verified" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🚀 **Status**: Ready for deployment!" >> $GITHUB_STEP_SUMMARY
