@@ -11,8 +11,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MODEL_VERSION=${MODEL_VERSION:-v1}  # CHANGE THIS: v1 or v2
+      - MODEL_VERSION=${MODEL_VERSION:-v2}  # CHANGE THIS: v1 or v2
       - PYTHONPATH=/app
     labels:
-      - "ml.version=${MODEL_VERSION:-v1}"     # For tracking
+      - "ml.version=${MODEL_VERSION:-v2}"     # For tracking
       - "ml.auto-deploy=true"                 # Enable auto-deploy
