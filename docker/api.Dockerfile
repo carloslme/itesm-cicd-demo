@@ -2,32 +2,25 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
+# Copy requirements first for better caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
-COPY src/api ./src/api
-COPY src/__init__.py ./src/__init__.py
+COPY src/ ./src/
+COPY model_registry.json ./
 
-# Create necessary directories
-RUN mkdir -p /app/src/api/models
-
+# TODO: Add conditional model training based on MODEL_VERSION
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV PORT=8000
+ENV MODEL_VERSION=v1
+
+# Train models (both versions for flexibility)
+RUN python3 src/training/train.py 1
+RUN python3 src/training/train.py 2
 
 # Expose port
-EXPOSE $PORT
+EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health || exit 1
-
-# Command to run the application
-CMD ["sh", "-c", "uvicorn src.api.main:app --host 0.0.0.0 --port $PORT"]
+# TODO: Add startup script that selects model version
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

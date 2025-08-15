@@ -1,97 +1,142 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.dummy import DummyClassifier
 from sklearn.metrics import accuracy_score
 import joblib
 import json
 from pathlib import Path
+import sys
 
 def load_data():
-    """Load the Iris dataset"""
-    data = pd.read_csv('src/training/data/iris.csv')
-    return data
+    """Load and prepare the Iris dataset"""
+    iris = load_iris()
+    X = iris.data
+    y = iris.target
+    return train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-def preprocess_data(data):
-    """Preprocess the data"""
-    X = data[['sepal_length', 'sepal_width', 'petal_length', 'petal_width']]
-    y = data['species'].map({'setosa': 0, 'versicolor': 1, 'virginica': 2})
-    return train_test_split(X, y, test_size=0.2, random_state=42)
+def train_v1_model(X_train, y_train, X_test, y_test):
+    """Train v1 model (deliberately poor performance)"""
+    print("Training v1 model (DummyClassifier with poor performance)...")
+    
+    # Use "uniform" strategy for truly random predictions (poor performance)
+    model = DummyClassifier(strategy="uniform", random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Evaluate on test set
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    
+    print(f"v1 Model Accuracy: {accuracy:.3f} (deliberately poor)")
+    
+    return model, accuracy
 
-def train_poor_model_v1(X_train, y_train):
-    """Train a deliberately poor model using dummy classifier"""
-    # Use a dummy classifier that makes poor predictions
-    model = DummyClassifier(
-        strategy='most_frequent',  # Always predicts the most frequent class
-        random_state=42
+def train_v2_model(X_train, y_train, X_test, y_test):
+    """Train v2 model (high performance)"""
+    print("Training v2 model (RandomForestClassifier with high performance)...")
+    
+    # High-performance model
+    model = RandomForestClassifier(
+        n_estimators=100,
+        random_state=42,
+        max_depth=10,
+        min_samples_split=2,
+        min_samples_leaf=1
     )
     model.fit(X_train, y_train)
     
-    return model
-
-def evaluate_model(model, X_test, y_test):
-    """Evaluate model performance"""
-    predictions = model.predict(X_test)
-    accuracy = accuracy_score(y_test, predictions)
-    return accuracy
-
-def save_model(model, version):
-    """Save model to file"""
-    model_dir = Path("src/api/models")
-    model_dir.mkdir(parents=True, exist_ok=True)
+    # Evaluate on test set
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
     
-    model_path = model_dir / f"iris_v{version}.pkl"
+    print(f"v2 Model Accuracy: {accuracy:.3f} (high performance)")
+    
+    return model, accuracy
+
+def save_model(model, accuracy, version):
+    """Save model and update registry"""
+    # Create models directory if it doesn't exist
+    models_dir = Path("src/api/models")
+    models_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save model
+    model_path = models_dir / f"iris_v{version}.pkl"
     joblib.dump(model, model_path)
-    return model_path
-
-def update_registry(model_path, accuracy):
-    """Update model registry with v1 model info"""
-    registry = {
-        "active_model": "iris_v1.pkl",
-        "metrics": {
-            "accuracy": accuracy
-        },
-        "version": "v1",
-        "model_type": "DummyClassifier"  # Fixed: Correct model type
-    }
+    print(f"Model saved to: {model_path}")
     
+    # Update registry with correct information for this specific version
+    update_registry(accuracy, version)
+
+def update_registry(accuracy, version):
+    """Update model registry with correct model info"""
+    
+    # Load existing registry or create new one
     registry_path = Path("model_registry.json")
+    if registry_path.exists():
+        with open(registry_path, 'r') as f:
+            registry = json.load(f)
+    else:
+        registry = {}
+    
+    # Update registry based on version being trained
+    if version == 1:
+        registry.update({
+            "active_model": "iris_v1.pkl",
+            "metrics": {
+                "accuracy": round(accuracy, 3)
+            },
+            "version": "v1",
+            "model_type": "DummyClassifier"
+        })
+        print(f"Registry updated for v1: accuracy={accuracy:.3f}, type=DummyClassifier")
+    elif version == 2:
+        registry.update({
+            "active_model": "iris_v2.pkl",
+            "metrics": {
+                "accuracy": round(accuracy, 3)
+            },
+            "version": "v2",
+            "model_type": "RandomForestClassifier"
+        })
+        print(f"Registry updated for v2: accuracy={accuracy:.3f}, type=RandomForestClassifier")
+    
+    # Save updated registry
     with open(registry_path, 'w') as f:
         json.dump(registry, f, indent=2)
+    
+    print(f"Registry saved: {registry}")
 
 def main():
-    """Main training pipeline for v1 model only"""
-    # Load and preprocess data
-    data = load_data()
-    X_train, X_test, y_train, y_test = preprocess_data(data)
+    if len(sys.argv) != 2:
+        print("Usage: python train.py <version>")
+        print("Version should be 1 or 2")
+        sys.exit(1)
     
-    print("🎯 Training Iris Classification Model v1")
-    print(f"Training set size: {len(X_train)}")
-    print(f"Test set size: {len(X_test)}")
+    try:
+        version = int(sys.argv[1])
+        if version not in [1, 2]:
+            raise ValueError("Version must be 1 or 2")
+    except ValueError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
     
-    # Train model v1 (poor performance by design)
-    print("\n📉 Training Model v1 (Poor Performance Model)...")
-    model_v1 = train_poor_model_v1(X_train, y_train)
-    accuracy_v1 = evaluate_model(model_v1, X_test, y_test)
-    print(f"Model v1 accuracy: {accuracy_v1:.3f}")
+    # Load data
+    X_train, X_test, y_train, y_test = load_data()
+    print(f"Dataset loaded: {len(X_train)} training samples, {len(X_test)} test samples")
     
-    # Ensure poor performance (should be around 0.33 for 3-class problem)
-    if accuracy_v1 > 0.6:
-        print("⚠️  Warning: v1 model performance is too good for demonstration!")
-        print("   Expected: ~0.33 (random guessing)")
-        print(f"   Actual: {accuracy_v1:.3f}")
+    # Train appropriate model
+    if version == 1:
+        model, accuracy = train_v1_model(X_train, y_train, X_test, y_test)
+    else:
+        model, accuracy = train_v2_model(X_train, y_train, X_test, y_test)
     
     # Save model and update registry
-    model_path_v1 = save_model(model_v1, 1)
-    update_registry(model_path_v1, accuracy_v1)
+    save_model(model, accuracy, version)
     
-    print(f"\n✅ Model v1 saved: {model_path_v1}")
-    print(f"📊 Performance: {accuracy_v1:.3f} accuracy (poor by design)")
-    print(f"📝 Registry updated with v1 model info")
-    print(f"🚀 Ready for initial deployment - v2 will show improvement!")
-    
-    return accuracy_v1
+    print(f"✅ Model v{version} training completed successfully!")
+    print(f"📊 Final accuracy: {accuracy:.3f}")
 
 if __name__ == "__main__":
     main()

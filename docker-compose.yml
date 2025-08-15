@@ -1,47 +1,73 @@
-version: '3.8'
-
 services:
-  training:
-    build:
-      context: .
-      dockerfile: docker/training.Dockerfile
-    volumes:
-      - ./src/api/models:/app/src/api/models
-      - ./model_registry.json:/app/model_registry.json
-    environment:
-      - PYTHONPATH=/app
-      - MODEL_VERSION=v1
-    command: ["python", "pipelines/iris_pipeline.py"]
-    networks:
-      - ml-network
-
-  api:
+  iris-ml-api:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     ports:
       - "8000:8000"
-    volumes:
-      - ./src/api/models:/app/src/api/models
-      - ./model_registry.json:/app/model_registry.json
     environment:
+      - MODEL_VERSION=${MODEL_VERSION:-v1}
       - PYTHONPATH=/app
-      - MODEL_VERSION=v1
-      - PORT=8000
-    depends_on:
-      - training
+    volumes:
+      - ./src:/app/src
+      - ./model_registry.json:/app/model_registry.json
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - ml-network
+    restart: unless-stopped
 
-networks:
-  ml-network:
-    driver: bridge
+  # Separate services for testing different versions
+  iris-ml-api-v1:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - MODEL_VERSION=v1
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+      - ./model_registry.json:/app/model_registry.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - testing
 
-volumes:
-  model-data:
-    driver: local
+  iris-ml-api-v2:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      - MODEL_VERSION=v2
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+      - ./model_registry.json:/app/model_registry.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - testing
+
+  # Load balancer for production-like setup
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - iris-ml-api-v1
+      - iris-ml-api-v2
+    profiles:
+      - production
